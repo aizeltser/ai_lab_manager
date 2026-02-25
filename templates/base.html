@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{{ title or "AI Lab Manager" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('index') }}" style="text-decoration:none; color:inherit;">
+        <div class="brand-badge">🧪
+        </div>
+        <div class="brand-title">AI Lab Manager</div>
+      </a>
+
+      <div class="nav-section">
+        <div class="nav-label">Experiments</div>
+        <a class="nav-item nav-item-primary" href="{{ url_for('experiment_new') }}">+ New Experiment</a>
+        <a class="nav-item" href="{{ url_for('index') }}">All Experiments</a>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Concepts Database</div>
+        <a class="nav-item nav-item-primary" href="{{ url_for('concept_new') }}">+ New Concept</a>
+        <a class="nav-item" href="{{ url_for('concepts') }}">All Concepts</a>
+      </div>
+
+      {% if concepts_sidebar %}
+        <div class="nav-section">
+          <div class="nav-label">Recent Concepts</div>
+          {% for c in concepts_sidebar %}
+            <a class="nav-item" href="{{ url_for('concept_view', concept_id=c.id) }}">
+              <span class="dot"></span>
+              <span class="nav-item-text">{{ c.title }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if experiments_all %}
+        <div class="nav-section">
+          <div class="nav-label">Wet Lab</div>
+          {% for e in experiments_by_lab.get("wet", []) %}
+            <a class="nav-item" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
+              <span class="dot"></span>
+              <span class="nav-item-text">{{ e.title }}</span>
+            </a>
+          {% endfor %}
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-label">Dry Lab</div>
+          {% for e in experiments_by_lab.get("dry", []) %}
+            <a class="nav-item" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
+              <span class="dot"></span>
+              <span class="nav-item-text">{{ e.title }}</span>
+            </a>
+          {% endfor %}
+        </div>
+
+        {% if experiments_by_lab.get("unassigned") %}
+          <div class="nav-section">
+            <div class="nav-label">Unassigned</div>
+            {% for e in experiments_by_lab.get("unassigned", []) %}
+              <a class="nav-item" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
+                <span class="dot"></span>
+                <span class="nav-item-text">{{ e.title }}</span>
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+      {% endif %}
+
+      <div class="sidebar-footer"></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="search">
+          <span class="search-icon">🔎</span>
+          <input class="search-input" placeholder="Search..." disabled />
+        </div>
+        <div class="topbar-right">
+          <span class="icon-pill">🔔</span>
+          <span class="icon-pill">⁉️</span>
+          <div class="chip">Angelina R&amp;D</div>
+        </div>
+      </header>
+
+      <div class="content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-stack">
+              {% for cat, msg in messages %}
+                <div class="flash flash-{{ cat }}">{{ msg }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>

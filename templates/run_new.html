@@ -1,0 +1,135 @@
+{% set title = "New Run" %}
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <div class="h1">New Run</div>
+    <div class="muted">Experiment: <b>{{ experiment.title }}</b></div>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-ghost" href="{{ url_for('experiment', experiment_id=experiment.id, tab='results') 
+}}">Back</a>
+  </div>
+</div>
+
+<form class="card form" method="post" enctype="multipart/form-data">
+  <div class="form-row">
+    <label class="label">Run title</label>
+    <input class="input" name="title" value="{{ form_title or '' }}" placeholder="Ex.: Run №1 — baseline" />
+  </div>
+
+  <div class="form-row">
+    <label class="label">Notes</label>
+    <textarea class="textarea" name="notes" placeholder="Observations, parameters, deviations...">{{ form_notes
+or '' }}</textarea>
+  </div>
+
+  <div class="form-row">
+    <label class="label">Physical Experiment Setup</label>
+    <div class="setup-table" data-setup>
+      <div class="setup-actions">
+        <button class="btn btn-ghost" type="button" data-add-col>Add Column</button>
+        <button class="btn btn-ghost" type="button" data-add-row>Add Row</button>
+      </div>
+      <div class="setup-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th contenteditable="true">Value</th>
+              <th contenteditable="true">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td contenteditable="true">Temperature</td>
+              <td contenteditable="true"></td>
+              <td contenteditable="true"></td>
+            </tr>
+            <tr>
+              <td contenteditable="true">Experiment time</td>
+              <td contenteditable="true"></td>
+              <td contenteditable="true"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <input type="hidden" name="setup_json" data-setup-json />
+    <div class="muted small">Edit columns/rows and values. Use “Add Column/Row” to resize the table.</div>
+  </div>
+
+  <div class="form-row">
+    <label class="label">Attachments</label>
+    <input class="input" type="file" name="files" multiple />
+    <div class="muted small">Images/tables/reports. You can add: png/jpg/webp/gif, pdf, csv/tsv/txt, xlsx,
+json, zip.</div>
+  </div>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Save Run</button>
+  </div>
+</form>
+
+<script>
+  (function () {
+    const root = document.querySelector("[data-setup]");
+    if (!root) return;
+    const addColBtn = root.querySelector("[data-add-col]");
+    const addRowBtn = root.querySelector("[data-add-row]");
+    const table = root.querySelector("table");
+    const hidden = document.querySelector("[data-setup-json]");
+
+    function addColumn() {
+      const th = document.createElement("th");
+      th.contentEditable = "true";
+      th.textContent = "New Column";
+      table.tHead.rows[0].appendChild(th);
+      for (const row of table.tBodies[0].rows) {
+        const td = document.createElement("td");
+        td.contentEditable = "true";
+        row.appendChild(td);
+      }
+    }
+
+    function addRow() {
+      const colCount = table.tHead.rows[0].cells.length;
+      const tr = document.createElement("tr");
+      for (let i = 0; i < colCount; i += 1) {
+        const td = document.createElement("td");
+        td.contentEditable = "true";
+        tr.appendChild(td);
+      }
+      table.tBodies[0].appendChild(tr);
+    }
+
+    function serialize() {
+      const cols = [];
+      const headers = table.tHead.rows[0].cells;
+      for (let i = 1; i < headers.length; i += 1) {
+        cols.push(headers[i].textContent.trim());
+      }
+      const rows = [];
+      for (const r of table.tBodies[0].rows) {
+        const cells = r.cells;
+        const label = (cells[0]?.textContent || "").trim();
+        const values = [];
+        for (let i = 1; i < cells.length; i += 1) {
+          values.push((cells[i]?.textContent || "").trim());
+        }
+        if (label || values.some(v => v)) {
+          rows.push({ label, values });
+        }
+      }
+      hidden.value = JSON.stringify({ columns: cols, rows });
+    }
+
+    addColBtn.addEventListener("click", addColumn);
+    addRowBtn.addEventListener("click", addRow);
+    table.addEventListener("input", serialize);
+    serialize();
+  })();
+</script>
+
+{% endblock %}

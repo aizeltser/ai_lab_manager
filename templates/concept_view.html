@@ -1,0 +1,88 @@
+{% set title = concept.title %}
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <div class="h1">{{ concept.title }}</div>
+    <div class="muted">Author: <b>{{ concept.author }}</b></div>
+    <div class="muted">Last updated: {{ concept.updated_at|pretty_dt }}</div>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-ghost" href="{{ url_for('concepts') }}">Back</a>
+  </div>
+</div>
+
+<div class="layout-2">
+  <section class="left">
+    <div class="card">
+      <div class="card-title-row">
+        <div class="card-title">Researcher Notes</div>
+        <div class="muted">{{ notes.updated_at|pretty_dt if notes else "—" }}</div>
+      </div>
+      <div class="card-body">
+        {% if notes %}
+          {{ notes.text }}
+        {% else %}
+          <span class="muted">No notes yet.</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title-row">
+        <div class="card-title">Steps</div>
+        <div class="muted">{{ steps|length }} steps</div>
+      </div>
+
+      {% if steps %}
+        <div class="list">
+          {% for s in steps %}
+            <div class="card">
+              <div class="row">
+                <div>
+                  <div class="card__title">Step {{ s.step_order }}</div>
+                  <div class="card__body">{{ s.text }}</div>
+                </div>
+                <div class="right">
+                  <div class="pill pill-soft">Updated: {{ s.updated_at|pretty_dt }}</div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty compact">
+          <div class="empty-title">No steps yet</div>
+          <div class="muted">Add the first step below.</div>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <aside class="right">
+    <div class="side-card">
+      <div class="side-title">Add Step</div>
+      <form method="post" action="{{ url_for('concept_step_new', concept_id=concept.id) }}">
+        <div class="form-row">
+          <label class="label">Step text</label>
+          <textarea class="textarea" name="text" placeholder="Describe the step..."></textarea>
+        </div>
+        <button class="btn btn-full" type="submit">Add Step</button>
+      </form>
+    </div>
+
+    <div class="side-card">
+      <div class="side-title">Researcher Notes</div>
+      <form method="post" action="{{ url_for('concept_notes_save', concept_id=concept.id) }}">
+        <div class="form-row">
+          <label class="label">Notes</label>
+          <textarea class="textarea" name="text" placeholder="Add notes...">{{ notes.text if notes else "" }}</textarea>
+        </div>
+        <button class="btn btn-full" type="submit">Save Notes</button>
+      </form>
+    </div>
+  </aside>
+</div>
+
+{% endblock %}

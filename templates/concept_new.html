@@ -1,0 +1,29 @@
+{% set title = "New Concept" %}
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <div class="h1">New Concept</div>
+    <div class="muted">Protocol/instruction with steps.</div>
+  </div>
+</div>
+
+<form class="card form" method="post">
+  <div class="form-row">
+    <label class="label">Title</label>
+    <input class="input" name="title" value="{{ form_title or '' }}" placeholder="Ex.: HIV Sequencing Protocol" />
+  </div>
+
+  <div class="form-row">
+    <label class="label">Author</label>
+    <input class="input" name="author" value="{{ form_author or '' }}" placeholder="Ex.: Dr. A. Smith" />
+  </div>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Create</button>
+    <a class="btn btn-ghost" href="{{ url_for('concepts') }}">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}

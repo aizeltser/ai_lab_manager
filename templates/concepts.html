@@ -1,0 +1,35 @@
+{% set title = "Concepts Database" %}
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <div class="h1">Concepts Database</div>
+    <div class="muted">Protocols and step-by-step instructions.</div>
+  </div>
+  <a class="btn" href="{{ url_for('concept_new') }}">+ New Concept</a>
+</div>
+
+{% if concepts %}
+  <div class="grid">
+    {% for c in concepts %}
+      <a class="card card-link" href="{{ url_for('concept_view', concept_id=c.id) }}">
+        <div class="card-title">{{ c.title }}</div>
+        <div class="card-meta">
+          <span class="pill pill-soft">Author: {{ c.author }}</span>
+          <span class="pill pill-soft">Updated: {{ c.updated_at|pretty_dt }}</span>
+        </div>
+        <div class="card-body">
+          <div class="muted">Created: {{ c.created_at|pretty_dt }}</div>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">
+    <div class="empty-title">No concepts yet</div>
+    <div class="muted">Press “+ New Concept” in the sideboard or above.</div>
+  </div>
+{% endif %}
+
+{% endblock %}
