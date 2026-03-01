@@ -1,0 +1,80 @@
+{% set title = "Compare Experiments" %}
+{% extends "base.html" %}
+{% from "_render_blocks.html" import render_blocks %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <div class="h1">Compare Experiments</div>
+    <div class="muted">Side-by-side view</div>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-ghost" href="{{ url_for('index') }}">Back</a>
+  </div>
+</div>
+
+<div class="compare-grid">
+  <div class="compare-panel">
+    <div class="card">
+      <div class="card-title-row">
+        <div class="card-title">{{ left.title }}</div>
+        <span class="pill pill-soft">{{ left.created_at|pretty_dt }}</span>
+      </div>
+      <div class="rendered-content compare-scroll">
+        {% if left_content %}
+          {{ render_blocks(left_content) }}
+        {% else %}
+          <div class="muted">{{ left.description or "No content" }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="compare-panel">
+    <div class="card">
+      <div class="card-title-row">
+        <div class="card-title">{{ right.title }}</div>
+        <span class="pill pill-soft">{{ right.created_at|pretty_dt }}</span>
+      </div>
+      <div class="rendered-content compare-scroll">
+        {% if right_content %}
+          {{ render_blocks(right_content) }}
+        {% else %}
+          <div class="muted">{{ right.description or "No content" }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px;">
+  <div class="card-title-row">
+    <div class="card-title">Shared AI Prompt</div>
+    <div class="muted">Saved to both experiments</div>
+  </div>
+  <div class="card-body">
+    {% if left_ai %}
+      <div class="muted small">Current prompt ({{ left.title }}):</div>
+      <div>{{ left_ai.text }}</div>
+    {% endif %}
+    {% if right_ai and (not left_ai or right_ai.text != left_ai.text) %}
+      <div class="muted small" style="margin-top:8px;">Current prompt ({{ right.title }}):</div>
+      <div>{{ right_ai.text }}</div>
+    {% endif %}
+    {% if not left_ai and not right_ai %}
+      <div class="muted">No prompts saved yet.</div>
+    {% endif %}
+  </div>
+  <div class="divider"></div>
+  <form method="post" action="{{ url_for('compare_ai_save') }}">
+    <input type="hidden" name="left_id" value="{{ left.id }}" />
+    <input type="hidden" name="right_id" value="{{ right.id }}" />
+    <div class="form-row">
+      <label class="label">Ask AI about both experiments</label>
+      <textarea class="textarea" name="text" placeholder="Write a prompt that applies to both experiments...">{{ left_ai.text if left_ai else "" }}</textarea>
+    </div>
+    <button class="btn" type="submit">Save Prompt</button>
+  </form>
+</div>
+
+{% endblock %}

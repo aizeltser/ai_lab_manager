@@ -5,9 +5,14 @@
 <div class="page-head">
   <div>
     <div class="h1">Experiments</div>
-    <div class="muted">Lab journal: experiments + runs</div>
+    <div class="muted">Lab journal: experiments + runs{% if tag_filter %} (filtered by tag){% endif %}</div>
   </div>
-  <a class="btn" href="{{ url_for('experiment_new') }}">+ New Experiment</a>
+  <div class="page-actions">
+    {% if tag_filter %}
+      <a class="btn btn-ghost" href="{{ url_for('index') }}">Clear filter</a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('experiment_new') }}">+ New Experiment</a>
+  </div>
 </div>
 
 {% if experiments %}
@@ -16,10 +21,8 @@
       <a class="card card-link" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
         <div class="card-title">{{ e.title }}</div>
         <div class="card-meta">
+          <span class="pill pill-soft">{{ lab_label(e.lab) }}</span>
           <span class="pill pill-soft">Created: {{ e.created_at|pretty_dt }}</span>
-        </div>
-        <div class="card-body">
-          <div class="muted">{{ e.description or "—" }}</div>
         </div>
       </a>
     {% endfor %}
@@ -27,7 +30,26 @@
 {% else %}
   <div class="empty">
     <div class="empty-title">No experiments yet</div>
-    <div class="muted">Press “+ New Experiment” in the sideboard or above.</div>
+    <div class="muted">Press "+ New Experiment" in the sidebar or above.</div>
+  </div>
+{% endif %}
+
+{% if activity %}
+  <div class="activity-section">
+    <div class="h1" style="margin-top:24px;">Recent Activity</div>
+    <div class="activity-list">
+      {% for a in activity %}
+        <div class="activity-item">
+          <div class="activity-dot activity-dot-{{ a.action }}"></div>
+          <div class="activity-body">
+            <span class="activity-action">{{ a.action|capitalize }}</span>
+            <span class="activity-entity">{{ a.entity_type }}</span>
+            <b>{{ a.entity_title }}</b>
+            <span class="muted small">{{ a.created_at|pretty_dt }}</span>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
   </div>
 {% endif %}
 

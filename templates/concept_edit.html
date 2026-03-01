@@ -1,0 +1,61 @@
+{% set title = "Edit: " ~ concept.title %}
+{% extends "base.html" %}
+{% from "_editor.html" import editor_head, editor_container, editor_init %}
+
+{% block head_scripts %}
+  {{ editor_head() }}
+{% endblock %}
+
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <div class="h1">Edit: {{ concept.title }}</div>
+    <div class="muted">Author: <b>{{ concept.author }}</b></div>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-ghost" href="{{ url_for('concept_view', concept_id=concept.id) }}">Cancel</a>
+  </div>
+</div>
+
+<form class="card form" method="post">
+  <div class="form-row">
+    <label class="label">Title</label>
+    <input class="input" name="title" value="{{ concept.title }}" />
+  </div>
+
+  {% if parent_options %}
+    <div class="form-row">
+      <label class="label">Parent page (optional)</label>
+      <select class="input" name="parent">
+        <option value="">— None (root level) —</option>
+        <optgroup label="Experiments">
+          {% for ptype, pid, ptitle in parent_options if ptype == 'experiment' %}
+            <option value="{{ ptype }}:{{ pid }}" {% if concept.parent_type == ptype and concept.parent_id == pid %}selected{% endif %}>{{ ptitle }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Concepts">
+          {% for ptype, pid, ptitle in parent_options if ptype == 'concept' %}
+            <option value="{{ ptype }}:{{ pid }}" {% if concept.parent_type == ptype and concept.parent_id == pid %}selected{% endif %}>{{ ptitle }}</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+    </div>
+  {% endif %}
+
+  <div class="form-row">
+    <label class="label">Content</label>
+    {{ editor_container() }}
+  </div>
+
+  <div class="form-actions">
+    <button class="btn" type="submit">Save</button>
+    <a class="btn btn-ghost" href="{{ url_for('concept_view', concept_id=concept.id) }}">Cancel</a>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block body_scripts %}
+  {{ editor_init(existing_data=concept.content_json) }}
+{% endblock %}

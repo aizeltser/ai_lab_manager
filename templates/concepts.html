@@ -5,9 +5,14 @@
 <div class="page-head">
   <div>
     <div class="h1">Concepts Database</div>
-    <div class="muted">Protocols and step-by-step instructions.</div>
+    <div class="muted">Protocols and step-by-step instructions{% if tag_filter %} (filtered by tag){% endif %}</div>
   </div>
-  <a class="btn" href="{{ url_for('concept_new') }}">+ New Concept</a>
+  <div class="page-actions">
+    {% if tag_filter %}
+      <a class="btn btn-ghost" href="{{ url_for('concepts') }}">Clear filter</a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('concept_new') }}">+ New Concept</a>
+  </div>
 </div>
 
 {% if concepts %}
@@ -28,7 +33,7 @@
 {% else %}
   <div class="empty">
     <div class="empty-title">No concepts yet</div>
-    <div class="muted">Press “+ New Concept” in the sideboard or above.</div>
+    <div class="muted">Press "+ New Concept" in the sidebar or above.</div>
   </div>
 {% endif %}
 

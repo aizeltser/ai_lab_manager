@@ -1,0 +1,106 @@
+{# Editor.js CDN scripts — include in {% block head_scripts %} #}
+{% macro editor_head() %}
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/editorjs@2/dist/editorjs.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/header@latest/dist/header.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/list@latest/dist/editorjs-list.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/table@latest/dist/table.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/image@latest/dist/image.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/attaches@latest/dist/attaches.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/delimiter@latest/dist/delimiter.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/quote@latest/dist/quote.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/code@latest/dist/code.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/inline-code@latest/dist/inline-code.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/marker@latest/dist/marker.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@editorjs/checklist@latest/dist/checklist.umd.min.js"></script>
+{% endmacro %}
+
+{# Editor.js container — place inside your form #}
+{% macro editor_container() %}
+<div id="editorjs" class="editorjs-container"></div>
+<input type="hidden" name="content_json" id="content_json_field" />
+{% endmacro %}
+
+{# Editor.js init script — include in {% block body_scripts %} #}
+{# existing_data should be a JSON string or None #}
+{% macro editor_init(existing_data=None) %}
+<script>
+(function() {
+  var existingData = null;
+  {% if existing_data %}
+    try { existingData = JSON.parse({{ existing_data|tojson }}); } catch(e) {}
+  {% endif %}
+
+  var editor = new EditorJS({
+    holder: 'editorjs',
+    placeholder: 'Start writing your content here...',
+    data: existingData || undefined,
+    onReady: function() {
+      // Auto-confirm block deletion (skip "click to delete" two-step)
+      var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+          if (m.type === 'attributes' && m.attributeName === 'class') {
+            var el = m.target;
+            if (el.classList && el.classList.contains('ce-popover-item--confirmation')) {
+              el.click();
+            }
+          }
+        });
+      });
+      var holder = document.getElementById('editorjs');
+      if (holder) {
+        observer.observe(holder, { attributes: true, subtree: true, attributeFilter: ['class'] });
+      }
+    },
+    tools: {
+      header: {
+        class: Header,
+        config: { levels: [2, 3, 4], defaultLevel: 2 }
+      },
+      list: { class: EditorjsList, inlineToolbar: true },
+      table: { class: Table, inlineToolbar: true },
+      image: {
+        class: ImageTool,
+        config: {
+          endpoints: { byFile: '/api/upload' },
+          field: 'image',
+          types: 'image/png,image/jpeg,image/jpg,image/webp,image/gif'
+        }
+      },
+      attaches: {
+        class: AttachesTool,
+        config: {
+          endpoint: '/api/upload',
+          field: 'file'
+        }
+      },
+      delimiter: Delimiter,
+      quote: { class: Quote, inlineToolbar: true },
+      code: CodeTool,
+      inlineCode: InlineCode,
+      marker: Marker,
+      checklist: { class: Checklist, inlineToolbar: true }
+    }
+  });
+
+  // On form submit, serialize editor content into the hidden field
+  var form = document.getElementById('editorjs').closest('form');
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      editor.save().then(function(outputData) {
+        document.getElementById('content_json_field').value = JSON.stringify(outputData);
+        // Use a native submit to avoid re-triggering this listener
+        var btn = document.createElement('input');
+        btn.type = 'hidden';
+        btn.name = '_submitted';
+        btn.value = '1';
+        form.appendChild(btn);
+        HTMLFormElement.prototype.submit.call(form);
+      }).catch(function(err) {
+        console.error('Editor save failed:', err);
+      });
+    });
+  }
+})();
+</script>
+{% endmacro %}

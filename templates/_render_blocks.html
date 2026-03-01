@@ -1,0 +1,109 @@
+{% macro render_list_items(items, ordered) %}
+  {% if ordered %}
+    <ol>
+      {% for item in items %}
+        {% if item is mapping %}
+          <li>
+            {{ item.content|sanitize|safe }}
+            {% if item["items"] %}
+              {{ render_list_items(item["items"], ordered) }}
+            {% endif %}
+          </li>
+        {% else %}
+          <li>{{ item|sanitize|safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  {% else %}
+    <ul>
+      {% for item in items %}
+        {% if item is mapping %}
+          <li>
+            {{ item.content|sanitize|safe }}
+            {% if item["items"] %}
+              {{ render_list_items(item["items"], ordered) }}
+            {% endif %}
+          </li>
+        {% else %}
+          <li>{{ item|sanitize|safe }}</li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endmacro %}
+
+{% macro render_blocks(content) %}
+  {% if content and content.blocks %}
+    {% for block in content.blocks %}
+
+      {% if block.type == "paragraph" %}
+        <p>{{ block.data.text|sanitize|safe }}</p>
+
+      {% elif block.type == "header" %}
+        <h{{ block.data.level }}>{{ block.data.text|sanitize|safe }}</h{{ block.data.level }}>
+
+      {% elif block.type == "list" %}
+        {{ render_list_items(block.data["items"], block.data.style == "ordered") }}
+
+      {% elif block.type == "image" %}
+        <figure class="editor-image{% if block.data.withBorder %} img-border{% endif %}{% if block.data.stretched %} img-stretched{% endif %}{% if block.data.withBackground %} img-bg{% endif %}">
+          <img src="{{ block.data.file.url }}" alt="{{ block.data.caption or '' }}" />
+          {% if block.data.caption %}<figcaption>{{ block.data.caption|sanitize|safe }}</figcaption>{% endif %}
+        </figure>
+
+      {% elif block.type == "table" %}
+        <div class="setup-view">
+          <table>
+            {% for row in block.data.content %}
+              {% if loop.first and block.data.withHeadings %}
+                <thead><tr>{% for cell in row %}<th>{{ cell|sanitize|safe }}</th>{% endfor %}</tr></thead>
+                <tbody>
+              {% else %}
+                <tr>{% for cell in row %}<td>{{ cell|sanitize|safe }}</td>{% endfor %}</tr>
+              {% endif %}
+            {% endfor %}
+            {% if block.data.withHeadings %}</tbody>{% endif %}
+          </table>
+        </div>
+
+      {% elif block.type == "attaches" %}
+        <div class="att-card">
+          <div class="att-card-top">
+            <div class="att-name">{{ block.data.title or block.data.file.name or "File" }}</div>
+          </div>
+          <div class="att-actions">
+            <a class="btn btn-ghost" href="{{ block.data.file.url }}" target="_blank">Open</a>
+            <a class="btn" href="{{ block.data.file.url }}" download>Download</a>
+          </div>
+        </div>
+
+      {% elif block.type == "delimiter" %}
+        <hr class="editor-delimiter" />
+
+      {% elif block.type == "quote" %}
+        <blockquote class="editor-quote">
+          <p>{{ block.data.text|sanitize|safe }}</p>
+          {% if block.data.caption %}<cite>{{ block.data.caption|sanitize|safe }}</cite>{% endif %}
+        </blockquote>
+
+      {% elif block.type == "code" %}
+        <pre class="editor-code"><code>{{ block.data.code }}</code></pre>
+
+      {% elif block.type == "checklist" %}
+        <div class="editor-checklist">
+          {% for item in block.data["items"] %}
+            <div class="editor-checklist-item">
+              {% if item is mapping %}
+                <span class="editor-checkbox{% if item.checked %} checked{% endif %}">{% if item.checked %}&#9745;{% else %}&#9744;{% endif %}</span>
+                <span>{{ item.text|sanitize|safe }}</span>
+              {% else %}
+                <span>{{ item|sanitize|safe }}</span>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endmacro %}
