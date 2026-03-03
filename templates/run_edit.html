@@ -1,4 +1,4 @@
-{% set title = "New Run" %}
+{% set title = "Edit: " ~ run.title %}
 {% extends "base.html" %}
 {% from "_editor.html" import editor_head, editor_container, editor_init %}
 
@@ -10,33 +10,33 @@
 
 <div class="page-head">
   <div>
-    <div class="h1">New Run</div>
+    <div class="h1">Edit: {{ run.title }}</div>
     <div class="muted">Experiment: <b>{{ experiment.title }}</b></div>
   </div>
   <div class="page-actions">
-    <a class="btn btn-ghost" href="{{ url_for('experiment', experiment_id=experiment.id, tab='results') }}">Back</a>
+    <a class="btn btn-ghost" href="{{ url_for('run_view', run_id=run.id) }}">Cancel</a>
   </div>
 </div>
 
 <form class="card form" method="post">
   <div class="form-row">
     <label class="label">Run title</label>
-    <input class="input" name="title" value="{{ form_title or '' }}" placeholder="Ex.: Run №1 — baseline" />
+    <input class="input" name="title" value="{{ run.title }}" />
   </div>
 
   <div class="form-row">
     <label class="label">Content</label>
     {{ editor_container() }}
-    <div class="muted small">Add observations, parameters, setup tables, images, and files.</div>
   </div>
 
   <div class="form-actions">
-    <button class="btn" type="submit">Save Run</button>
+    <button class="btn" type="submit">Save</button>
+    <a class="btn btn-ghost" href="{{ url_for('run_view', run_id=run.id) }}">Cancel</a>
   </div>
 </form>
 
 {% endblock %}
 
 {% block body_scripts %}
-  {{ editor_init() }}
+  {{ editor_init(existing_data=run.content_json) }}
 {% endblock %}

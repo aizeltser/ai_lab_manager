@@ -1,89 +1,92 @@
 {% extends "base.html" %}
+{% from "_render_blocks.html" import render_blocks %}
 {% block content %}
-  <div class="pagehead">
-    <div class="pagehead__row">
-      <div>
-        <h1>{{ experiment.title }}</h1>
-        {% if experiment.description %}
-          <p class="muted">{{ experiment.description }}</p>
-        {% else %}
-          <p class="muted">No description.</p>
-        {% endif %}
-        {% set lab_label = "Unassigned" %}
-        {% if experiment.lab == "wet" %}
-          {% set lab_label = "Wet Lab" %}
-        {% elif experiment.lab == "dry" %}
-          {% set lab_label = "Dry Lab" %}
-        {% endif %}
-        <p class="muted">Lab: {{ lab_label }}</p>
-      </div>
-      <div class="pagehead__actions">
-        <a class="btn" href="{{ url_for('run_new', 
-experiment_id=experiment.id) }}">+ New run</a>
-      </div>
+  <div class="page-head">
+    <div>
+      <h1 class="h1">{{ experiment.title }}</h1>
+      <p class="muted">Lab: {{ lab_label(experiment.lab) }}</p>
     </div>
-    <div class="meta muted">Created: {{ experiment.created_at|pretty_dt }}</div>
+    <div class="page-actions">
+      <a class="btn" href="{{ url_for('experiment_edit', experiment_id=experiment.id) }}">Edit</a>
+      <form method="post" action="{{ url_for('experiment_duplicate', experiment_id=experiment.id) }}" style="display:inline">
+        <button class="btn btn-ghost" type="submit">Duplicate</button>
+      </form>
+      <form method="post" action="{{ url_for('experiment_delete', experiment_id=experiment.id) }}" onsubmit="return confirm('Delete this experiment and all its runs?');" style="display:inline">
+        <button class="btn btn-danger" type="submit">Delete</button>
+      </form>
+      <a class="btn" href="{{ url_for('run_new', experiment_id=experiment.id) }}">+ New run</a>
+    </div>
   </div>
+  <div class="muted small">Created: {{ experiment.created_at|pretty_dt }}</div>
 
-  <h2>Experiment Attachments</h2>
-  {% if experiment_attachments %}
-    <div class="att-grid">
-      {% for a in experiment_attachments %}
-        <div class="att-card">
-            <div class="att-card-top">
-              <div class="att-name">{{ a.original_name }}</div>
-              <div class="muted small">{{ a.created_at|pretty_dt }}</div>
-            </div>
+  {% include "_tags_inline.html" %}
 
-          {% if a.mime and a.mime.startswith("image/") %}
-            <div class="preview">
-              <img src="{{ url_for('uploads', filename=a.stored_name) }}" alt="{{ a.original_name }}" />
-            </div>
-          {% endif %}
-
-          <div class="att-actions">
-            <a class="btn btn-ghost" href="{{ url_for('uploads', filename=a.stored_name) }}" target="_blank">Open</a>
-            <a class="btn" href="{{ url_for('experiment_attachment_download', attachment_id=a.id) }}">Download</a>
-          </div>
-        </div>
-      {% endfor %}
+  {# Rich content (new) #}
+  {% if content %}
+    <div class="card" style="margin-top:14px;">
+      <div class="card-title-row">
+        <div class="card-title">Content</div>
+      </div>
+      <div class="rendered-content">
+        {{ render_blocks(content) }}
+      </div>
     </div>
   {% else %}
-    <div class="empty compact">
-      <div class="empty-title">No attachments</div>
-      <div class="muted">Add files when creating the experiment.</div>
-    </div>
-  {% endif %}
+    {# Legacy fallback: description + setup + attachments #}
+    {% if experiment.description %}
+      <p class="muted">{{ experiment.description }}</p>
+    {% endif %}
 
-  <h2>Physical Experiment Setup</h2>
-  {% if setup %}
-    <div class="setup-view">
-      <table>
-        <thead>
-          <tr>
-            <th>Parameter</th>
-            {% for c in setup["columns"] %}
-              <th>{{ c }}</th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in setup["rows"] %}
+    {% if experiment_attachments %}
+      <h2>Experiment Attachments</h2>
+      <div class="att-grid">
+        {% for a in experiment_attachments %}
+          <div class="att-card">
+              <div class="att-card-top">
+                <div class="att-name">{{ a.original_name }}</div>
+                <div class="muted small">{{ a.created_at|pretty_dt }}</div>
+              </div>
+
+            {% if a.mime and a.mime.startswith("image/") %}
+              <div class="preview">
+                <img src="{{ url_for('uploads', filename=a.stored_name) }}" alt="{{ a.original_name }}" />
+              </div>
+            {% endif %}
+
+            <div class="att-actions">
+              <a class="btn btn-ghost" href="{{ url_for('uploads', filename=a.stored_name) }}" target="_blank">Open</a>
+              <a class="btn" href="{{ url_for('experiment_attachment_download', attachment_id=a.id) }}">Download</a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if setup %}
+      <h2>Physical Experiment Setup</h2>
+      <div class="setup-view">
+        <table>
+          <thead>
             <tr>
-              <td>{{ r["label"] }}</td>
-              {% for v in r["values"] %}
-                <td>{{ v }}</td>
+              <th>Parameter</th>
+              {% for c in setup["columns"] %}
+                <th>{{ c }}</th>
               {% endfor %}
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <div class="empty compact">
-      <div class="empty-title">No setup yet</div>
-      <div class="muted">Fill the Physical Experiment Setup during experiment creation.</div>
-    </div>
+          </thead>
+          <tbody>
+            {% for r in setup["rows"] %}
+              <tr>
+                <td>{{ r["label"] }}</td>
+                {% for v in r["values"] %}
+                  <td>{{ v }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
   {% endif %}
 
   <h2>Ask AI Lab Manager About Your Experiment</h2>
@@ -115,27 +118,22 @@ experiment_id=experiment.id) }}">+ New run</a>
   {% if runs|length == 0 %}
     <div class="card">
       <p>No runs for this experiment.</p>
-      <a class="btn" href="{{ url_for('run_new', 
-experiment_id=experiment.id) }}">Add run</a>
+      <a class="btn" href="{{ url_for('run_new', experiment_id=experiment.id) }}">Add run</a>
     </div>
   {% else %}
-    <div class="list">
+    <div class="run-list">
       {% for r in runs %}
-        <div class="card">
-          <div class="row">
-            <div>
-              <div class="card__title">{{ r.title }}</div>
-              {% if r.notes %}
-                <div class="card__body">{{ r.notes }}</div>
-              {% else %}
-                <div class="card__body muted">No notes</div>
-              {% endif %}
-              <div class="card__meta">Created: {{ r.created_at|pretty_dt }}</div>
-            </div>
-            <div class="right">
-              <div class="pill">{{ r.attachments_count }} attach.</div>
-              <a class="btn btn--ghost" href="{{ url_for('run_view', run_id=r.id) }}">Open</a>
-            </div>
+        <div class="run-row">
+          <div>
+            <div class="run-name">{{ r.title }}</div>
+            {% if r.notes %}
+              <div class="muted small">{{ r.notes }}</div>
+            {% endif %}
+            <div class="muted small">Created: {{ r.created_at|pretty_dt }}</div>
+          </div>
+          <div class="run-side">
+            <span class="pill pill-soft">{{ r.attachments_count }} attach.</span>
+            <a class="btn btn-ghost" href="{{ url_for('run_view', run_id=r.id) }}" style="margin-left:8px;">Open</a>
           </div>
         </div>
       {% endfor %}

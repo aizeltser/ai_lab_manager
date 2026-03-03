@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{{ title or "AI Lab Manager" }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  {% block head_scripts %}{% endblock %}
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="{{ url_for('index') }}" style="text-decoration:none; color:inherit;">
-        <div class="brand-badge">🧪
-        </div>
+        <div class="brand-badge">🧪</div>
         <div class="brand-title">AI Lab Manager</div>
       </a>
 
@@ -27,51 +27,41 @@
         <a class="nav-item" href="{{ url_for('concepts') }}">All Concepts</a>
       </div>
 
-      {% if concepts_sidebar %}
+      {% if tags_all %}
         <div class="nav-section">
-          <div class="nav-label">Recent Concepts</div>
-          {% for c in concepts_sidebar %}
-            <a class="nav-item" href="{{ url_for('concept_view', concept_id=c.id) }}">
-              <span class="dot"></span>
-              <span class="nav-item-text">{{ c.title }}</span>
+          <div class="nav-label">Tags</div>
+          {% for tag in tags_all %}
+            <a class="nav-item" href="{{ url_for('index', tag=tag.id) }}">
+              <span class="dot dot-tag" style="background:var(--tag-{{ tag.color }})"></span>
+              <span class="nav-item-text">{{ tag.name }}</span>
             </a>
           {% endfor %}
         </div>
       {% endif %}
 
-      {% if experiments_all %}
+      {% if sidebar_tree %}
         <div class="nav-section">
-          <div class="nav-label">Wet Lab</div>
-          {% for e in experiments_by_lab.get("wet", []) %}
-            <a class="nav-item" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
-              <span class="dot"></span>
-              <span class="nav-item-text">{{ e.title }}</span>
-            </a>
-          {% endfor %}
-        </div>
-
-        <div class="nav-section">
-          <div class="nav-label">Dry Lab</div>
-          {% for e in experiments_by_lab.get("dry", []) %}
-            <a class="nav-item" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
-              <span class="dot"></span>
-              <span class="nav-item-text">{{ e.title }}</span>
-            </a>
-          {% endfor %}
-        </div>
-
-        {% if experiments_by_lab.get("unassigned") %}
-          <div class="nav-section">
-            <div class="nav-label">Unassigned</div>
-            {% for e in experiments_by_lab.get("unassigned", []) %}
-              <a class="nav-item" href="{{ url_for('experiment', experiment_id=e.id, tab='overview') }}">
+          <div class="nav-label">Pages</div>
+          {% macro render_tree_node(node, depth) %}
+            {% if node.type == "experiment" %}
+              <a class="nav-item sidebar-exp-link" data-experiment-id="{{ node.id }}" href="{{ url_for('experiment', experiment_id=node.id, tab='overview') }}" style="padding-left:{{ 12 + depth * 16 }}px">
                 <span class="dot"></span>
-                <span class="nav-item-text">{{ e.title }}</span>
+                <span class="nav-item-text">{{ node.title }}</span>
               </a>
+            {% else %}
+              <a class="nav-item" href="{{ url_for('concept_view', concept_id=node.id) }}" style="padding-left:{{ 12 + depth * 16 }}px">
+                <span class="dot dot-concept"></span>
+                <span class="nav-item-text">{{ node.title }}</span>
+              </a>
+            {% endif %}
+            {% for child in node.children %}
+              {{ render_tree_node(child, depth + 1) }}
             {% endfor %}
-          </div>
-        {% endif %}
-
+          {% endmacro %}
+          {% for node in sidebar_tree %}
+            {{ render_tree_node(node, 0) }}
+          {% endfor %}
+        </div>
       {% endif %}
 
       <div class="sidebar-footer"></div>
@@ -91,6 +81,19 @@
       </header>
 
       <div class="content">
+        {% if breadcrumbs %}
+          <nav class="breadcrumbs">
+            {% for label, url in breadcrumbs %}
+              {% if not loop.last and url %}
+                <a class="breadcrumb-link" href="{{ url }}">{{ label }}</a>
+                <span class="breadcrumb-sep">/</span>
+              {% else %}
+                <span class="breadcrumb-current">{{ label }}</span>
+              {% endif %}
+            {% endfor %}
+          </nav>
+        {% endif %}
+
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             <div class="flash-stack">
@@ -106,5 +109,37 @@
     </main>
   </div>
 
+  <script>
+  // Ctrl+click on sidebar experiment links for compare mode
+  (function() {
+    var KEY = 'compare_first_id';
+    document.querySelectorAll('.sidebar-exp-link').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          var id = link.getAttribute('data-experiment-id');
+          var first = sessionStorage.getItem(KEY);
+          if (first && first !== id) {
+            sessionStorage.removeItem(KEY);
+            document.querySelectorAll('.sidebar-exp-link').forEach(function(l) { l.classList.remove('compare-selected'); });
+            window.location.href = '/compare?left=' + first + '&right=' + id;
+          } else {
+            sessionStorage.setItem(KEY, id);
+            document.querySelectorAll('.sidebar-exp-link').forEach(function(l) { l.classList.remove('compare-selected'); });
+            link.classList.add('compare-selected');
+          }
+        }
+      });
+    });
+    // Restore highlight on page load
+    var stored = sessionStorage.getItem(KEY);
+    if (stored) {
+      var el = document.querySelector('.sidebar-exp-link[data-experiment-id="' + stored + '"]');
+      if (el) el.classList.add('compare-selected');
+    }
+  })();
+  </script>
+
+  {% block body_scripts %}{% endblock %}
 </body>
 </html>

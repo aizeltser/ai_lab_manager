@@ -1,4 +1,4 @@
-{% set title = "New Experiment" %}
+{% set title = "Edit: " ~ experiment.title %}
 {% extends "base.html" %}
 {% from "_editor.html" import editor_head, editor_container, editor_init %}
 
@@ -10,32 +10,25 @@
 
 <div class="page-head">
   <div>
-    <div class="h1">New Experiment</div>
-    <div class="muted">Title, lab group, and rich content with embedded files.</div>
+    <div class="h1">Edit: {{ experiment.title }}</div>
+    <div class="muted">Lab: {{ lab_label(experiment.lab) }}</div>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-ghost" href="{{ url_for('experiment', experiment_id=experiment.id, tab='overview') }}">Cancel</a>
   </div>
 </div>
-
-{% if page_templates %}
-  <div class="template-selector">
-    <span class="muted small">Start from template:</span>
-    {% for key, tmpl in page_templates.items() %}
-      <a class="btn btn-ghost" href="{{ url_for('experiment_new', template=key) }}">{{ tmpl.label }}</a>
-    {% endfor %}
-  </div>
-{% endif %}
 
 <form class="card form" method="post">
   <div class="form-row">
     <label class="label">Title</label>
-    <input class="input" name="title" value="{{ form_title or '' }}" placeholder="Ex.: Exp. 05 — 'Title'" />
+    <input class="input" name="title" value="{{ experiment.title }}" />
   </div>
 
   <div class="form-row">
     <label class="label">Lab group</label>
     <select class="input" name="lab" required>
-      <option value="" disabled {% if not form_lab %}selected{% endif %}>Choose lab...</option>
       {% for value, label in lab_options %}
-        <option value="{{ value }}" {% if form_lab == value %}selected{% endif %}>{{ label }}</option>
+        <option value="{{ value }}" {% if experiment.lab == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
   </div>
@@ -47,12 +40,12 @@
         <option value="">— None (root level) —</option>
         <optgroup label="Experiments">
           {% for ptype, pid, ptitle in parent_options if ptype == 'experiment' %}
-            <option value="{{ ptype }}:{{ pid }}">{{ ptitle }}</option>
+            <option value="{{ ptype }}:{{ pid }}" {% if experiment.parent_type == ptype and experiment.parent_id == pid %}selected{% endif %}>{{ ptitle }}</option>
           {% endfor %}
         </optgroup>
         <optgroup label="Concepts">
           {% for ptype, pid, ptitle in parent_options if ptype == 'concept' %}
-            <option value="{{ ptype }}:{{ pid }}">{{ ptitle }}</option>
+            <option value="{{ ptype }}:{{ pid }}" {% if experiment.parent_type == ptype and experiment.parent_id == pid %}selected{% endif %}>{{ ptitle }}</option>
           {% endfor %}
         </optgroup>
       </select>
@@ -62,17 +55,16 @@
   <div class="form-row">
     <label class="label">Content</label>
     {{ editor_container() }}
-    <div class="muted small">Use the toolbar for formatting, tables, images, and file attachments.</div>
   </div>
 
   <div class="form-actions">
-    <button class="btn" type="submit">Create</button>
-    <a class="btn btn-ghost" href="{{ url_for('index') }}">Cancel</a>
+    <button class="btn" type="submit">Save</button>
+    <a class="btn btn-ghost" href="{{ url_for('experiment', experiment_id=experiment.id, tab='overview') }}">Cancel</a>
   </div>
 </form>
 
 {% endblock %}
 
 {% block body_scripts %}
-  {{ editor_init(existing_data=template_data) }}
+  {{ editor_init(existing_data=experiment.content_json) }}
 {% endblock %}

@@ -1,0 +1,84 @@
+{# Inline tag management — expects: entity_tags, all_tags, tag_colors, and a way to determine entity_type/entity_id #}
+{% set _entity_type = entity_type|default(
+  'experiment' if experiment is defined and run is not defined else
+  'run' if run is defined else
+  'concept' if concept is defined else ''
+) %}
+{% set _entity_id =
+  experiment.id if (_entity_type == 'experiment' and experiment is defined) else
+  run.id if (_entity_type == 'run' and run is defined) else
+  concept.id if (_entity_type == 'concept' and concept is defined) else 0
+%}
+
+{% if entity_tags is defined or all_tags is defined %}
+<div class="tags-section" data-entity-type="{{ _entity_type }}" data-entity-id="{{ _entity_id }}">
+  <div class="tags-row">
+    {% for tag in entity_tags %}
+      <span class="tag-pill" style="--tag-bg:var(--tag-{{ tag.color }})" data-tag-id="{{ tag.id }}">
+        {{ tag.name }}
+        <button class="tag-remove" onclick="removeTag(this, {{ tag.id }})" title="Remove tag">&times;</button>
+      </span>
+    {% endfor %}
+    <button class="tag-add-btn" onclick="toggleTagForm(this)" title="Add tag">+ Tag</button>
+  </div>
+  <div class="tag-form" style="display:none;">
+    <div class="tag-form-inner">
+      <input class="input tag-name-input" placeholder="Tag name..." style="flex:1; padding:8px 10px;" />
+      <div class="tag-color-swatches">
+        {% for color in tag_colors %}
+          <button class="tag-swatch {% if loop.first %}active{% endif %}" data-color="{{ color }}" style="background:var(--tag-{{ color }})" onclick="selectColor(this)"></button>
+        {% endfor %}
+      </div>
+      <button class="btn" onclick="addTag(this)" style="padding:8px 12px;">Add</button>
+    </div>
+    {% if all_tags %}
+      <div class="tag-existing">
+        {% for tag in all_tags %}
+          <button class="tag-chip-option" style="--tag-bg:var(--tag-{{ tag.color }})" onclick="addExistingTag(this, {{ tag.id }})">{{ tag.name }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function toggleTagForm(btn) {
+  var form = btn.closest('.tags-section').querySelector('.tag-form');
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+}
+function selectColor(btn) {
+  btn.closest('.tag-color-swatches').querySelectorAll('.tag-swatch').forEach(function(s) { s.classList.remove('active'); });
+  btn.classList.add('active');
+}
+function addTag(btn) {
+  var section = btn.closest('.tags-section');
+  var name = section.querySelector('.tag-name-input').value.trim();
+  var color = section.querySelector('.tag-swatch.active');
+  color = color ? color.getAttribute('data-color') : 'blue';
+  var entityType = section.getAttribute('data-entity-type');
+  var entityId = section.getAttribute('data-entity-id');
+  if (!name) return;
+  fetch('/api/tags', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name,color:color}) })
+    .then(function(r){return r.json()})
+    .then(function(d) {
+      if (!d.success) return;
+      return fetch('/api/entity/'+entityType+'/'+entityId+'/tag', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({tag_id:d.tag.id}) });
+    })
+    .then(function(){ location.reload(); });
+}
+function addExistingTag(btn, tagId) {
+  var section = btn.closest('.tags-section');
+  var entityType = section.getAttribute('data-entity-type');
+  var entityId = section.getAttribute('data-entity-id');
+  fetch('/api/entity/'+entityType+'/'+entityId+'/tag', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({tag_id:tagId}) })
+    .then(function(){ location.reload(); });
+}
+function removeTag(btn, tagId) {
+  var section = btn.closest('.tags-section');
+  var entityType = section.getAttribute('data-entity-type');
+  var entityId = section.getAttribute('data-entity-id');
+  fetch('/api/entity/'+entityType+'/'+entityId+'/tag/'+tagId+'/remove', { method:'POST', headers:{'Content-Type':'application/json'} })
+    .then(function(){ location.reload(); });
+}
+</script>
+{% endif %}
