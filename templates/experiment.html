@@ -89,29 +89,9 @@
     {% endif %}
   {% endif %}
 
-  <h2>Ask AI Lab Manager About Your Experiment</h2>
-  <div class="card">
-    <div class="card-title-row">
-      <div class="card-title">Prompt</div>
-      <div class="muted">{{ ai_prompt.updated_at|pretty_dt if ai_prompt else "—" }}</div>
-    </div>
-    <div class="card-body">
-      {% if ai_prompt %}
-        <div class="muted small">Last saved prompt:</div>
-        <div>{{ ai_prompt.text }}</div>
-      {% else %}
-        <div class="muted">No prompt saved yet.</div>
-      {% endif %}
-    </div>
-    <div class="divider"></div>
-    <form method="post" action="{{ url_for('experiment_ai_save', experiment_id=experiment.id) }}">
-      <div class="form-row">
-        <label class="label">Ask AI Lab Manager about your experiment</label>
-        <textarea class="textarea" name="text" placeholder="Write your prompt...">{{ ai_prompt.text if ai_prompt else "" }}</textarea>
-      </div>
-      <button class="btn" type="submit">Save Prompt</button>
-    </form>
-  </div>
+  {% set chat_entity_type = "experiment" %}
+  {% set chat_entity_id = experiment.id %}
+  {% include "_ai_chat.html" %}
 
   <h2>Runs</h2>
 

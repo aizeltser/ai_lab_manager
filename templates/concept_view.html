@@ -106,4 +106,8 @@
   </div>
 {% endif %}
 
+  {% set chat_entity_type = "concept" %}
+  {% set chat_entity_id = concept.id %}
+  {% include "_ai_chat.html" %}
+
 {% endblock %}

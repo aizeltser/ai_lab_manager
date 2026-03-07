@@ -47,34 +47,8 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:14px;">
-  <div class="card-title-row">
-    <div class="card-title">Shared AI Prompt</div>
-    <div class="muted">Saved to both experiments</div>
-  </div>
-  <div class="card-body">
-    {% if left_ai %}
-      <div class="muted small">Current prompt ({{ left.title }}):</div>
-      <div>{{ left_ai.text }}</div>
-    {% endif %}
-    {% if right_ai and (not left_ai or right_ai.text != left_ai.text) %}
-      <div class="muted small" style="margin-top:8px;">Current prompt ({{ right.title }}):</div>
-      <div>{{ right_ai.text }}</div>
-    {% endif %}
-    {% if not left_ai and not right_ai %}
-      <div class="muted">No prompts saved yet.</div>
-    {% endif %}
-  </div>
-  <div class="divider"></div>
-  <form method="post" action="{{ url_for('compare_ai_save') }}">
-    <input type="hidden" name="left_id" value="{{ left.id }}" />
-    <input type="hidden" name="right_id" value="{{ right.id }}" />
-    <div class="form-row">
-      <label class="label">Ask AI about both experiments</label>
-      <textarea class="textarea" name="text" placeholder="Write a prompt that applies to both experiments...">{{ left_ai.text if left_ai else "" }}</textarea>
-    </div>
-    <button class="btn" type="submit">Save Prompt</button>
-  </form>
-</div>
+{% set chat_entity_type = "experiment" %}
+{% set chat_entity_id = left.id %}
+{% include "_ai_chat.html" %}
 
 {% endblock %}

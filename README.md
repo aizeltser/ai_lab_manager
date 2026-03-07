@@ -1,6 +1,6 @@
 # AI Lab Manager
 
-A collaborative Electronic Lab Notebook (ELN) designed for multidisciplinary research teams. Built to manage scientific experiments, protocols, and research concepts, it features content editing and AI assistance, hierarchical page organization, and robust team collaboration tools. Engineered specifically for complex lab workflows, it provides a unified workspace where wet lab researchers, bioinformaticians, sensor engineers, and DevOps specialists can seamlessly drive shared projects forward.
+A collaborative Electronic Lab Notebook (ELN) designed for multidisciplinary research teams. Built to manage scientific experiments, protocols, and research concepts, it features content editing, an AI assistant powered by Groq, hierarchical page organization, and robust team collaboration tools. Engineered specifically for complex lab workflows, it provides a unified workspace where wet lab researchers, bioinformaticians, sensor engineers, and DevOps specialists can seamlessly drive shared projects forward.
 
 ## Quick Start
 
@@ -15,6 +15,7 @@ Opens at **http://127.0.0.1:5001**.
 
 - **PostgreSQL 16+** with the `citext` extension
 - **Python 3.10+**
+- **Groq API key** (free tier) — get one at [console.groq.com](https://console.groq.com)
 
 ```bash
 # First-time setup: create database and user (once per machine)
@@ -22,16 +23,27 @@ sudo -u postgres psql -c "CREATE USER <user> WITH PASSWORD '<password>';"
 sudo -u postgres psql -c "CREATE DATABASE eln_db OWNER <user>;"
 sudo -u postgres psql -d eln_db -c "CREATE EXTENSION IF NOT EXISTS citext;"
 
-# Configure connection
-cp .env.example .env   # then edit DATABASE_URL with your credentials
+# Configure connection and API key
+cp .env.example .env   # then edit DATABASE_URL and GROQ_API_KEY
 ```
 
 All tables are created automatically on first launch — no manual schema setup needed.
+
+### Seed Demo Data
+
+The app ships with a built-in mock dataset — a multi-phase robotics research project with 6 experiments, 12 runs, and 9 tags - for testing the AI assistant and exploring the UI.
+
+```bash
+python app.py --seed              # seed only if database is empty
+python app.py --clean --seed      # wipe all data and reseed from scratch
+python app.py --clean             # wipe all data without reseeding
+```
 
 ## Stack
 
 - **Backend:** Python / Flask (single-file `app.py`)
 - **Database:** PostgreSQL with raw SQL via psycopg3 (no ORM), connection pooling via psycopg_pool
+- **AI:** Groq API (Llama 3.3 70B) — free tier, OpenAI-compatible chat completions
 - **Frontend:** Jinja2 templates, vanilla JS, single CSS file
 - **Editor:** [Editor.js](https://editorjs.io/) (WYSIWYG block editor loaded via CDN)
 
@@ -70,15 +82,20 @@ Three built-in templates to quick-start new pages:
 ### Split-View Comparison
 - Side-by-side comparison of two experiments
 - Ctrl+click (or Cmd+click) two experiments in the sidebar to open compare view
-- Shared AI prompt pane below both panels — saves to both experiments
+- AI chat available below both panels
 
 ### Duplicate Pages
 - One-click duplication for experiments and concepts
 - Copies content, tags, and parent assignment
 - New page titled "Copy of [original]"
 
-### AI Prompt Integration
-- Designed as a foundation for future LLM integration
+### AI Assistant
+- Chat-based AI assistant on every experiment, run, and concept page
+- Powered by Groq (Llama 3.3 70B) — free API tier, no credit card required
+- Full project context injected automatically: the AI sees all experiments, runs, concepts, tags, and recent activity
+- Entity-aware: when chatting from a specific page, that entity's content is prioritized
+- Multi-turn conversation with persistent chat history per entity
+- Ask questions like "What formulation had the fastest response time?" or "Compare Phase 1 and Phase 2 results"
 
 ### Legacy Support
 - Existing data (plain-text descriptions, setup tables, step-by-step instructions, file attachments) renders correctly via fallback templates
@@ -111,6 +128,7 @@ ai_lab_manager/
     _editor.html          # Editor.js macros (CDN loading, init, form serialize)
     _render_blocks.html   # Server-side rendering of Editor.js JSON blocks
     _tags_inline.html     # Inline tag management partial
+    _ai_chat.html         # AI chat panel partial (vanilla JS)
   uploads/                # File uploads (gitignored)
 ```
 
@@ -120,9 +138,7 @@ ai_lab_manager/
 experiments (id, title, lab, content_json, parent_type, parent_id, ...)
   -> runs (id, experiment_id, title, content_json, ...)
        -> attachments (id, run_id, stored_name, original_name, ...)
-       -> run_ai_prompts (run_id, text, ...)
   -> experiment_attachments (id, experiment_id, ...)
-  -> experiment_ai_prompts (experiment_id, text, ...)
 
 concepts (id, title, author, content_json, parent_type, parent_id, ...)
   -> concept_steps (id, concept_id, step_order, text, ...)  [legacy]
@@ -132,6 +148,7 @@ tags (id, name, color)
 entity_tags (entity_type, entity_id, tag_id)
 activity_log (id, entity_type, entity_id, entity_title, action, created_at)
 media (id, stored_name, original_name, entity_type, entity_id, ...)
+chat_messages (id, entity_type, entity_id, role, content, created_at)
 ```
 
 All tables are created automatically at startup via `CREATE TABLE IF NOT EXISTS`. Foreign keys use `ON DELETE CASCADE`. Tags use `CITEXT` for case-insensitive uniqueness.

@@ -1,0 +1,130 @@
+<div class="ai-chat-panel" id="ai-chat-panel">
+  <div class="ai-chat-header">
+    <div class="ai-chat-title">AI Lab Manager</div>
+    <button class="btn btn-ghost ai-chat-clear" onclick="aiChatClear()" title="Clear history">Clear</button>
+  </div>
+  <div class="ai-chat-messages" id="ai-chat-messages"></div>
+  <div class="ai-chat-input-row">
+    <textarea class="ai-chat-input" id="ai-chat-input" placeholder="Ask about your experiments..." rows="1"></textarea>
+    <button class="btn ai-chat-send" id="ai-chat-send" onclick="aiChatSend()">Send</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  var entityType = {{ (chat_entity_type or '')|tojson }};
+  var entityId = {{ (chat_entity_id or '')|tojson }};
+  var messagesEl = document.getElementById('ai-chat-messages');
+  var inputEl = document.getElementById('ai-chat-input');
+  var sendBtn = document.getElementById('ai-chat-send');
+
+  function escapeHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function appendMessage(role, content) {
+    var div = document.createElement('div');
+    div.className = 'ai-message ai-message-' + role;
+    var label = document.createElement('div');
+    label.className = 'ai-message-role';
+    label.textContent = role === 'user' ? 'You' : 'AI Assistant';
+    div.appendChild(label);
+    var body = document.createElement('div');
+    body.className = 'ai-message-body';
+    body.innerHTML = escapeHtml(content);
+    div.appendChild(body);
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function setLoading(on) {
+    sendBtn.disabled = on;
+    sendBtn.textContent = on ? '...' : 'Send';
+    if (on) {
+      var div = document.createElement('div');
+      div.className = 'ai-message ai-message-assistant ai-loading';
+      div.innerHTML = '<div class="ai-message-role">AI Assistant</div><div class="ai-message-body ai-typing">Thinking...</div>';
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    } else {
+      var loading = messagesEl.querySelector('.ai-loading');
+      if (loading) loading.remove();
+    }
+  }
+
+  window.aiChatSend = function() {
+    var text = inputEl.value.trim();
+    if (!text) return;
+    appendMessage('user', text);
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    setLoading(true);
+
+    fetch('/ai/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        message: text,
+        entity_type: entityType || null,
+        entity_id: entityId ? parseInt(entityId) : null
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      setLoading(false);
+      if (data.error) {
+        appendMessage('assistant', 'Error: ' + data.error);
+      } else {
+        appendMessage('assistant', data.reply);
+      }
+    })
+    .catch(function(err) {
+      setLoading(false);
+      appendMessage('assistant', 'Network error: ' + err.message);
+    });
+  };
+
+  window.aiChatClear = function() {
+    if (!confirm('Clear chat history?')) return;
+    fetch('/ai/clear', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        entity_type: entityType || null,
+        entity_id: entityId ? parseInt(entityId) : null
+      })
+    })
+    .then(function() {
+      messagesEl.innerHTML = '';
+    });
+  };
+
+  // Load history on page load
+  var params = new URLSearchParams();
+  if (entityType) params.set('entity_type', entityType);
+  if (entityId) params.set('entity_id', entityId);
+  fetch('/ai/history?' + params.toString())
+    .then(function(r) { return r.json(); })
+    .then(function(messages) {
+      messages.forEach(function(m) {
+        appendMessage(m.role, m.content);
+      });
+    });
+
+  // Enter to send, Shift+Enter for newline
+  inputEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      aiChatSend();
+    }
+  });
+
+  // Auto-resize textarea
+  inputEl.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+})();
+</script>
