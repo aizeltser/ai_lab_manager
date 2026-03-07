@@ -1,11 +1,19 @@
 import os
-import sqlite3
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 
 import re
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from flask import (
     Flask,
@@ -21,7 +29,6 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 APP_DIR = Path(__file__).resolve().parent
-DB_PATH = APP_DIR / "eln.db"
 UPLOAD_DIR = APP_DIR / "uploads"
 
 ALLOWED_EXTENSIONS = {
@@ -32,6 +39,18 @@ ALLOWED_EXTENSIONS = {
     "json",
     "zip"
 }
+
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://antines:qweasd123@localhost:5432/eln_db"
+)
+
+pool = ConnectionPool(
+    conninfo=DATABASE_URL,
+    min_size=2,
+    max_size=10,
+    kwargs={"row_factory": dict_row},
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key")
@@ -127,11 +146,10 @@ def pretty_dt(value):
 app.jinja_env.filters["pretty_dt"] = pretty_dt
 
 
+@contextmanager
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    with pool.connection() as conn:
+        yield conn
 
 
 def init_storage():
@@ -139,26 +157,32 @@ def init_storage():
     with get_db() as db:
         db.execute("""
             CREATE TABLE IF NOT EXISTS experiments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
                 description TEXT,
                 lab TEXT,
                 setup_json TEXT,
+                content_json TEXT,
+                parent_type TEXT,
+                parent_id INTEGER,
                 created_at TEXT NOT NULL
             )
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS concepts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 title TEXT NOT NULL,
                 author TEXT NOT NULL,
+                content_json TEXT,
+                parent_type TEXT,
+                parent_id INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS concept_steps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 concept_id INTEGER NOT NULL,
                 step_order INTEGER NOT NULL,
                 text TEXT NOT NULL,
@@ -169,42 +193,40 @@ def init_storage():
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS concept_notes (
-                concept_id INTEGER PRIMARY KEY,
+                concept_id INTEGER PRIMARY KEY REFERENCES concepts(id) ON DELETE CASCADE,
                 text TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE CASCADE
+                updated_at TEXT NOT NULL
             )
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 experiment_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 notes TEXT,
                 setup_json TEXT,
+                content_json TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
             )
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS experiment_ai_prompts (
-                experiment_id INTEGER PRIMARY KEY,
+                experiment_id INTEGER PRIMARY KEY REFERENCES experiments(id) ON DELETE CASCADE,
                 text TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+                updated_at TEXT NOT NULL
             )
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS run_ai_prompts (
-                run_id INTEGER PRIMARY KEY,
+                run_id INTEGER PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
                 text TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
+                updated_at TEXT NOT NULL
             )
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS attachments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 run_id INTEGER NOT NULL,
                 stored_name TEXT NOT NULL,
                 original_name TEXT NOT NULL,
@@ -215,7 +237,7 @@ def init_storage():
         """)
         db.execute("""
             CREATE TABLE IF NOT EXISTS experiment_attachments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 experiment_id INTEGER NOT NULL,
                 stored_name TEXT NOT NULL,
                 original_name TEXT NOT NULL,
@@ -225,28 +247,9 @@ def init_storage():
             )
         """)
 
-        cols = [r["name"] for r in db.execute("PRAGMA table_info(experiments)").fetchall()]
-        if "lab" not in cols:
-            db.execute("ALTER TABLE experiments ADD COLUMN lab TEXT")
-        if "setup_json" not in cols:
-            db.execute("ALTER TABLE experiments ADD COLUMN setup_json TEXT")
-
-        run_cols = [r["name"] for r in db.execute("PRAGMA table_info(runs)").fetchall()]
-        if "setup_json" not in run_cols:
-            db.execute("ALTER TABLE runs ADD COLUMN setup_json TEXT")
-
-        # --- Rich-text editor columns ---
-        if "content_json" not in cols:
-            db.execute("ALTER TABLE experiments ADD COLUMN content_json TEXT")
-        if "content_json" not in run_cols:
-            db.execute("ALTER TABLE runs ADD COLUMN content_json TEXT")
-        concept_cols = [r["name"] for r in db.execute("PRAGMA table_info(concepts)").fetchall()]
-        if "content_json" not in concept_cols:
-            db.execute("ALTER TABLE concepts ADD COLUMN content_json TEXT")
-
         db.execute("""
             CREATE TABLE IF NOT EXISTS media (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 stored_name TEXT NOT NULL,
                 original_name TEXT NOT NULL,
                 mime TEXT,
@@ -260,7 +263,7 @@ def init_storage():
         # --- Activity log ---
         db.execute("""
             CREATE TABLE IF NOT EXISTS activity_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 entity_type TEXT NOT NULL,
                 entity_id INTEGER NOT NULL,
                 entity_title TEXT NOT NULL,
@@ -272,8 +275,8 @@ def init_storage():
         # --- Tags ---
         db.execute("""
             CREATE TABLE IF NOT EXISTS tags (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                id SERIAL PRIMARY KEY,
+                name CITEXT NOT NULL UNIQUE,
                 color TEXT NOT NULL DEFAULT 'blue'
             )
         """)
@@ -286,18 +289,6 @@ def init_storage():
                 FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
             )
         """)
-
-        # --- Tree hierarchy columns ---
-        if "parent_type" not in cols:
-            db.execute("ALTER TABLE experiments ADD COLUMN parent_type TEXT")
-        if "parent_id" not in cols:
-            db.execute("ALTER TABLE experiments ADD COLUMN parent_id INTEGER")
-        if "parent_type" not in concept_cols:
-            db.execute("ALTER TABLE concepts ADD COLUMN parent_type TEXT")
-        if "parent_id" not in concept_cols:
-            db.execute("ALTER TABLE concepts ADD COLUMN parent_id INTEGER")
-
-    migrate_legacy_content()
 
 
 def _make_editor_json(blocks):
@@ -318,12 +309,12 @@ def migrate_legacy_content():
             cid = c["id"]
             blocks = []
             notes = db.execute(
-                "SELECT text FROM concept_notes WHERE concept_id = ?", (cid,)
+                "SELECT text FROM concept_notes WHERE concept_id = %s", (cid,)
             ).fetchone()
             if notes and notes["text"]:
                 blocks.append({"type": "paragraph", "data": {"text": notes["text"]}})
             steps = db.execute(
-                "SELECT text FROM concept_steps WHERE concept_id = ? ORDER BY step_order",
+                "SELECT text FROM concept_steps WHERE concept_id = %s ORDER BY step_order",
                 (cid,),
             ).fetchall()
             if steps:
@@ -334,7 +325,7 @@ def migrate_legacy_content():
                 })
             if blocks:
                 db.execute(
-                    "UPDATE concepts SET content_json = ? WHERE id = ?",
+                    "UPDATE concepts SET content_json = %s WHERE id = %s",
                     (_make_editor_json(blocks), cid),
                 )
 
@@ -357,7 +348,7 @@ def migrate_legacy_content():
                 })
             if blocks:
                 db.execute(
-                    "UPDATE experiments SET content_json = ? WHERE id = ?",
+                    "UPDATE experiments SET content_json = %s WHERE id = %s",
                     (_make_editor_json(blocks), e["id"]),
                 )
 
@@ -380,7 +371,7 @@ def migrate_legacy_content():
                 })
             if blocks:
                 db.execute(
-                    "UPDATE runs SET content_json = ? WHERE id = ?",
+                    "UPDATE runs SET content_json = %s WHERE id = %s",
                     (_make_editor_json(blocks), r["id"]),
                 )
 
@@ -432,8 +423,8 @@ def link_media(entity_type, entity_id, content_json_str):
     with get_db() as db:
         for stored_name in urls:
             db.execute("""
-                UPDATE media SET entity_type = ?, entity_id = ?
-                WHERE stored_name = ? AND (entity_id IS NULL OR entity_id = ?)
+                UPDATE media SET entity_type = %s, entity_id = %s
+                WHERE stored_name = %s AND (entity_id IS NULL OR entity_id = %s)
             """, (entity_type, entity_id, stored_name, entity_id))
 
 
@@ -464,7 +455,7 @@ def log_activity(entity_type, entity_id, entity_title, action):
     with get_db() as db:
         db.execute("""
             INSERT INTO activity_log (entity_type, entity_id, entity_title, action, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         """, (entity_type, entity_id, entity_title, action, now_iso()))
 
 
@@ -472,7 +463,7 @@ def get_entity_tags(db, entity_type, entity_id):
     return db.execute("""
         SELECT t.* FROM tags t
         JOIN entity_tags et ON et.tag_id = t.id
-        WHERE et.entity_type = ? AND et.entity_id = ?
+        WHERE et.entity_type = %s AND et.entity_id = %s
         ORDER BY t.name
     """, (entity_type, entity_id)).fetchall()
 
@@ -525,14 +516,14 @@ def get_ancestor_chain(db, entity_type, entity_id, max_depth=20):
             break
         visited.add((et, eid))
         if et == "experiment":
-            row = db.execute("SELECT id, title, parent_type, parent_id FROM experiments WHERE id = ?", (eid,)).fetchone()
+            row = db.execute("SELECT id, title, parent_type, parent_id FROM experiments WHERE id = %s", (eid,)).fetchone()
             if row:
                 chain.append(("experiment", row["id"], row["title"]))
                 et, eid = row["parent_type"], row["parent_id"]
             else:
                 break
         elif et == "concept":
-            row = db.execute("SELECT id, title, parent_type, parent_id FROM concepts WHERE id = ?", (eid,)).fetchone()
+            row = db.execute("SELECT id, title, parent_type, parent_id FROM concepts WHERE id = %s", (eid,)).fetchone()
             if row:
                 chain.append(("concept", row["id"], row["title"]))
                 et, eid = row["parent_type"], row["parent_id"]
@@ -559,9 +550,10 @@ def get_parent_options(db, exclude_type=None, exclude_id=None):
     return options
 
 
-@app.before_request
-def ensure_ready():
+# Run init_storage() once at startup instead of per-request
+with app.app_context():
     init_storage()
+    migrate_legacy_content()
 
 
 @app.context_processor
@@ -570,12 +562,12 @@ def inject_sidebar():
         experiments = db.execute("""
             SELECT id, title, lab, parent_type, parent_id, created_at
             FROM experiments
-            ORDER BY datetime(created_at) DESC, id DESC
+            ORDER BY created_at DESC, id DESC
         """).fetchall()
         concepts = db.execute("""
             SELECT id, title, parent_type, parent_id, updated_at
             FROM concepts
-            ORDER BY datetime(updated_at) DESC, id DESC
+            ORDER BY updated_at DESC, id DESC
         """).fetchall()
         tags_all = get_all_tags(db)
 
@@ -606,18 +598,18 @@ def index():
             experiments = db.execute("""
                 SELECT e.* FROM experiments e
                 JOIN entity_tags et ON et.entity_type = 'experiment' AND et.entity_id = e.id
-                WHERE et.tag_id = ?
-                ORDER BY datetime(e.created_at) DESC, e.id DESC
+                WHERE et.tag_id = %s
+                ORDER BY e.created_at DESC, e.id DESC
             """, (tag_filter,)).fetchall()
         else:
             experiments = db.execute("""
                 SELECT *
                 FROM experiments
-                ORDER BY datetime(created_at) DESC, id DESC
+                ORDER BY created_at DESC, id DESC
             """).fetchall()
         activity = db.execute("""
             SELECT * FROM activity_log
-            ORDER BY datetime(created_at) DESC, id DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 20
         """).fetchall()
     return render_template("index.html", experiments=experiments, activity=activity, tag_filter=tag_filter)
@@ -632,14 +624,14 @@ def concepts():
                 SELECT c.id, c.title, c.author, c.created_at, c.updated_at
                 FROM concepts c
                 JOIN entity_tags et ON et.entity_type = 'concept' AND et.entity_id = c.id
-                WHERE et.tag_id = ?
-                ORDER BY datetime(c.updated_at) DESC, c.id DESC
+                WHERE et.tag_id = %s
+                ORDER BY c.updated_at DESC, c.id DESC
             """, (tag_filter,)).fetchall()
         else:
             items = db.execute("""
                 SELECT id, title, author, created_at, updated_at
                 FROM concepts
-                ORDER BY datetime(updated_at) DESC, id DESC
+                ORDER BY updated_at DESC, id DESC
             """).fetchall()
     return render_template("concepts.html", concepts=items, tag_filter=tag_filter)
 
@@ -672,9 +664,10 @@ def concept_new():
         with get_db() as db:
             cur = db.execute("""
                 INSERT INTO concepts (title, author, content_json, parent_type, parent_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (title, author, content_json, parent_type, parent_id, stamp, stamp))
-            concept_id = cur.lastrowid
+            concept_id = cur.fetchone()["id"]
 
         if content_json:
             link_media("concept", concept_id, content_json)
@@ -701,7 +694,7 @@ def concept_view(concept_id):
         concept = db.execute("""
             SELECT *
             FROM concepts
-            WHERE id = ?
+            WHERE id = %s
         """, (concept_id,)).fetchone()
         if not concept:
             abort(404)
@@ -711,13 +704,13 @@ def concept_view(concept_id):
         steps = db.execute("""
             SELECT *
             FROM concept_steps
-            WHERE concept_id = ?
+            WHERE concept_id = %s
             ORDER BY step_order ASC, id ASC
         """, (concept_id,)).fetchall()
         notes = db.execute("""
             SELECT *
             FROM concept_notes
-            WHERE concept_id = ?
+            WHERE concept_id = %s
         """, (concept_id,)).fetchone()
 
         entity_tags = get_entity_tags(db, "concept", concept_id)
@@ -744,24 +737,24 @@ def concept_step_new(concept_id):
         return redirect(url_for("concept_view", concept_id=concept_id))
 
     with get_db() as db:
-        exists = db.execute("SELECT id FROM concepts WHERE id = ?", (concept_id,)).fetchone()
+        exists = db.execute("SELECT id FROM concepts WHERE id = %s", (concept_id,)).fetchone()
         if not exists:
             abort(404)
         last = db.execute("""
             SELECT MAX(step_order) AS max_order
             FROM concept_steps
-            WHERE concept_id = ?
+            WHERE concept_id = %s
         """, (concept_id,)).fetchone()["max_order"]
         next_order = (last or 0) + 1
         stamp = now_iso()
         db.execute("""
             INSERT INTO concept_steps (concept_id, step_order, text, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         """, (concept_id, next_order, text, stamp, stamp))
         db.execute("""
             UPDATE concepts
-            SET updated_at = ?
-            WHERE id = ?
+            SET updated_at = %s
+            WHERE id = %s
         """, (stamp, concept_id))
 
     flash("Step added.", "success")
@@ -776,13 +769,13 @@ def concept_notes_save(concept_id):
         return redirect(url_for("concept_view", concept_id=concept_id))
 
     with get_db() as db:
-        exists = db.execute("SELECT id FROM concepts WHERE id = ?", (concept_id,)).fetchone()
+        exists = db.execute("SELECT id FROM concepts WHERE id = %s", (concept_id,)).fetchone()
         if not exists:
             abort(404)
         stamp = now_iso()
         db.execute("""
             INSERT INTO concept_notes (concept_id, text, updated_at)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             ON CONFLICT(concept_id) DO UPDATE SET
               text=excluded.text,
               updated_at=excluded.updated_at
@@ -794,7 +787,7 @@ def concept_notes_save(concept_id):
 @app.route("/concept/<int:concept_id>/edit", methods=["GET", "POST"])
 def concept_edit(concept_id):
     with get_db() as db:
-        concept = db.execute("SELECT * FROM concepts WHERE id = ?", (concept_id,)).fetchone()
+        concept = db.execute("SELECT * FROM concepts WHERE id = %s", (concept_id,)).fetchone()
         if not concept:
             abort(404)
 
@@ -815,8 +808,8 @@ def concept_edit(concept_id):
 
             stamp = now_iso()
             db.execute("""
-                UPDATE concepts SET title = ?, content_json = ?, parent_type = ?, parent_id = ?, updated_at = ?
-                WHERE id = ?
+                UPDATE concepts SET title = %s, content_json = %s, parent_type = %s, parent_id = %s, updated_at = %s
+                WHERE id = %s
             """, (title, content_json, parent_type, parent_id, stamp, concept_id))
 
             if content_json:
@@ -835,11 +828,11 @@ def concept_edit(concept_id):
 @app.post("/concept/<int:concept_id>/delete")
 def concept_delete(concept_id):
     with get_db() as db:
-        row = db.execute("SELECT id, title FROM concepts WHERE id = ?", (concept_id,)).fetchone()
+        row = db.execute("SELECT id, title FROM concepts WHERE id = %s", (concept_id,)).fetchone()
         if not row:
             abort(404)
-        db.execute("DELETE FROM entity_tags WHERE entity_type = 'concept' AND entity_id = ?", (concept_id,))
-        db.execute("DELETE FROM concepts WHERE id = ?", (concept_id,))
+        db.execute("DELETE FROM entity_tags WHERE entity_type = 'concept' AND entity_id = %s", (concept_id,))
+        db.execute("DELETE FROM concepts WHERE id = %s", (concept_id,))
     log_activity("concept", concept_id, row["title"], "deleted")
     flash("Concept deleted.", "success")
     return redirect(url_for("concepts"))
@@ -848,11 +841,11 @@ def concept_delete(concept_id):
 @app.post("/experiment/<int:experiment_id>/delete")
 def experiment_delete(experiment_id):
     with get_db() as db:
-        row = db.execute("SELECT id, title FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
+        row = db.execute("SELECT id, title FROM experiments WHERE id = %s", (experiment_id,)).fetchone()
         if not row:
             abort(404)
-        db.execute("DELETE FROM entity_tags WHERE entity_type = 'experiment' AND entity_id = ?", (experiment_id,))
-        db.execute("DELETE FROM experiments WHERE id = ?", (experiment_id,))
+        db.execute("DELETE FROM entity_tags WHERE entity_type = 'experiment' AND entity_id = %s", (experiment_id,))
+        db.execute("DELETE FROM experiments WHERE id = %s", (experiment_id,))
     log_activity("experiment", experiment_id, row["title"], "deleted")
     flash("Experiment deleted.", "success")
     return redirect(url_for("index"))
@@ -861,12 +854,12 @@ def experiment_delete(experiment_id):
 @app.post("/run/<int:run_id>/delete")
 def run_delete(run_id):
     with get_db() as db:
-        run = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        run = db.execute("SELECT * FROM runs WHERE id = %s", (run_id,)).fetchone()
         if not run:
             abort(404)
         experiment_id = run["experiment_id"]
-        db.execute("DELETE FROM entity_tags WHERE entity_type = 'run' AND entity_id = ?", (run_id,))
-        db.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+        db.execute("DELETE FROM entity_tags WHERE entity_type = 'run' AND entity_id = %s", (run_id,))
+        db.execute("DELETE FROM runs WHERE id = %s", (run_id,))
     log_activity("run", run_id, run["title"], "deleted")
     flash("Run deleted.", "success")
     return redirect(url_for("experiment", experiment_id=experiment_id, tab="results"))
@@ -880,13 +873,13 @@ def experiment_ai_save(experiment_id):
         return redirect(url_for("experiment", experiment_id=experiment_id, tab="overview"))
 
     with get_db() as db:
-        exists = db.execute("SELECT id FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
+        exists = db.execute("SELECT id FROM experiments WHERE id = %s", (experiment_id,)).fetchone()
         if not exists:
             abort(404)
         stamp = now_iso()
         db.execute("""
             INSERT INTO experiment_ai_prompts (experiment_id, text, updated_at)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             ON CONFLICT(experiment_id) DO UPDATE SET
               text=excluded.text,
               updated_at=excluded.updated_at
@@ -903,13 +896,13 @@ def run_ai_save(run_id):
         return redirect(url_for("run_view", run_id=run_id))
 
     with get_db() as db:
-        exists = db.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
+        exists = db.execute("SELECT id FROM runs WHERE id = %s", (run_id,)).fetchone()
         if not exists:
             abort(404)
         stamp = now_iso()
         db.execute("""
             INSERT INTO run_ai_prompts (run_id, text, updated_at)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             ON CONFLICT(run_id) DO UPDATE SET
               text=excluded.text,
               updated_at=excluded.updated_at
@@ -948,9 +941,10 @@ def experiment_new():
         with get_db() as db:
             cur = db.execute("""
                 INSERT INTO experiments (title, lab, content_json, parent_type, parent_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (title, lab, content_json, parent_type, parent_id, now_iso()))
-            experiment_id = cur.lastrowid
+            experiment_id = cur.fetchone()["id"]
 
         if content_json:
             link_media("experiment", experiment_id, content_json)
@@ -974,7 +968,7 @@ def experiment_new():
 @app.route("/experiment/<int:experiment_id>/edit", methods=["GET", "POST"])
 def experiment_edit(experiment_id):
     with get_db() as db:
-        exp = db.execute("SELECT * FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
+        exp = db.execute("SELECT * FROM experiments WHERE id = %s", (experiment_id,)).fetchone()
         if not exp:
             abort(404)
 
@@ -1000,8 +994,8 @@ def experiment_edit(experiment_id):
                 return render_template("experiment_edit.html", experiment=exp, lab_options=LAB_OPTIONS, parent_options=parent_options)
 
             db.execute("""
-                UPDATE experiments SET title = ?, lab = ?, content_json = ?, parent_type = ?, parent_id = ?
-                WHERE id = ?
+                UPDATE experiments SET title = %s, lab = %s, content_json = %s, parent_type = %s, parent_id = %s
+                WHERE id = %s
             """, (title, lab, content_json, parent_type, parent_id, experiment_id))
 
             if content_json:
@@ -1023,7 +1017,7 @@ def experiment(experiment_id):
 
     with get_db() as db:
         exp = db.execute(
-            "SELECT * FROM experiments WHERE id = ?",
+            "SELECT * FROM experiments WHERE id = %s",
             (experiment_id,),
         ).fetchone()
         if not exp:
@@ -1034,29 +1028,29 @@ def experiment(experiment_id):
         experiment_attachments = db.execute("""
             SELECT *
             FROM experiment_attachments
-            WHERE experiment_id = ?
-            ORDER BY datetime(created_at) DESC, id DESC
+            WHERE experiment_id = %s
+            ORDER BY created_at DESC, id DESC
         """, (experiment_id,)).fetchall()
         ai_prompt = db.execute("""
             SELECT *
             FROM experiment_ai_prompts
-            WHERE experiment_id = ?
+            WHERE experiment_id = %s
         """, (experiment_id,)).fetchone()
 
         runs = db.execute("""
             SELECT r.*,
                    (SELECT COUNT(*) FROM attachments a WHERE a.run_id = r.id) AS attachments_count
             FROM runs r
-            WHERE r.experiment_id = ?
-            ORDER BY datetime(r.created_at) DESC, r.id DESC
+            WHERE r.experiment_id = %s
+            ORDER BY r.created_at DESC, r.id DESC
         """, (experiment_id,)).fetchall()
 
         recent_attachments = db.execute("""
             SELECT a.*, r.title AS run_title
             FROM attachments a
             JOIN runs r ON r.id = a.run_id
-            WHERE r.experiment_id = ?
-            ORDER BY datetime(a.created_at) DESC, a.id DESC
+            WHERE r.experiment_id = %s
+            ORDER BY a.created_at DESC, a.id DESC
             LIMIT 6
         """, (experiment_id,)).fetchall()
 
@@ -1094,7 +1088,7 @@ def experiment(experiment_id):
 def run_new(experiment_id):
     with get_db() as db:
         exp = db.execute(
-            "SELECT * FROM experiments WHERE id = ?",
+            "SELECT * FROM experiments WHERE id = %s",
             (experiment_id,),
         ).fetchone()
     if not exp:
@@ -1111,9 +1105,10 @@ def run_new(experiment_id):
         with get_db() as db:
             cur = db.execute("""
                 INSERT INTO runs (experiment_id, title, content_json, created_at)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
             """, (experiment_id, title, content_json, now_iso()))
-            run_id = cur.lastrowid
+            run_id = cur.fetchone()["id"]
 
         if content_json:
             link_media("run", run_id, content_json)
@@ -1129,10 +1124,10 @@ def run_new(experiment_id):
 @app.route("/run/<int:run_id>/edit", methods=["GET", "POST"])
 def run_edit(run_id):
     with get_db() as db:
-        run = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        run = db.execute("SELECT * FROM runs WHERE id = %s", (run_id,)).fetchone()
         if not run:
             abort(404)
-        exp = db.execute("SELECT * FROM experiments WHERE id = ?", (run["experiment_id"],)).fetchone()
+        exp = db.execute("SELECT * FROM experiments WHERE id = %s", (run["experiment_id"],)).fetchone()
 
     if request.method == "POST":
         title = (request.form.get("title") or "").strip()
@@ -1144,8 +1139,8 @@ def run_edit(run_id):
 
         with get_db() as db:
             db.execute("""
-                UPDATE runs SET title = ?, content_json = ?
-                WHERE id = ?
+                UPDATE runs SET title = %s, content_json = %s
+                WHERE id = %s
             """, (title, content_json, run_id))
 
         if content_json:
@@ -1162,10 +1157,10 @@ def run_edit(run_id):
 @app.route("/run/<int:run_id>")
 def run_view(run_id):
     with get_db() as db:
-        run = db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        run = db.execute("SELECT * FROM runs WHERE id = %s", (run_id,)).fetchone()
         if not run:
             abort(404)
-        exp = db.execute("SELECT * FROM experiments WHERE id = ?", (run["experiment_id"],)).fetchone()
+        exp = db.execute("SELECT * FROM experiments WHERE id = %s", (run["experiment_id"],)).fetchone()
         if not exp:
             abort(404)
         setup = parse_setup(run["setup_json"])
@@ -1173,13 +1168,13 @@ def run_view(run_id):
         ai_prompt = db.execute("""
             SELECT *
             FROM run_ai_prompts
-            WHERE run_id = ?
+            WHERE run_id = %s
         """, (run_id,)).fetchone()
         attachments = db.execute("""
             SELECT *
             FROM attachments
-            WHERE run_id = ?
-            ORDER BY datetime(created_at) DESC, id DESC
+            WHERE run_id = %s
+            ORDER BY created_at DESC, id DESC
         """, (run_id,)).fetchall()
 
         entity_tags = get_entity_tags(db, "run", run_id)
@@ -1210,7 +1205,7 @@ def uploads(filename):
 @app.route("/attachment/<int:attachment_id>/download")
 def attachment_download(attachment_id):
     with get_db() as db:
-        att = db.execute("SELECT * FROM attachments WHERE id = ?", (attachment_id,)).fetchone()
+        att = db.execute("SELECT * FROM attachments WHERE id = %s", (attachment_id,)).fetchone()
     if not att:
         abort(404)
     return send_from_directory(
@@ -1224,7 +1219,7 @@ def attachment_download(attachment_id):
 @app.route("/experiment/attachment/<int:attachment_id>/download")
 def experiment_attachment_download(attachment_id):
     with get_db() as db:
-        att = db.execute("SELECT * FROM experiment_attachments WHERE id = ?", (attachment_id,)).fetchone()
+        att = db.execute("SELECT * FROM experiment_attachments WHERE id = %s", (attachment_id,)).fetchone()
     if not att:
         abort(404)
     return send_from_directory(
@@ -1250,7 +1245,7 @@ def api_upload():
     with get_db() as db:
         db.execute("""
             INSERT INTO media (stored_name, original_name, mime, size_bytes, entity_type, entity_id, created_at)
-            VALUES (?, ?, ?, ?, '', NULL, ?)
+            VALUES (%s, %s, %s, %s, '', NULL, %s)
         """, (stored, f.filename, f.mimetype, size, now_iso()))
 
     return jsonify(success=1, file={
@@ -1272,11 +1267,11 @@ def api_tag_create():
     if color not in TAG_COLORS:
         color = "blue"
     with get_db() as db:
-        existing = db.execute("SELECT id FROM tags WHERE name = ?", (name,)).fetchone()
+        existing = db.execute("SELECT id FROM tags WHERE name = %s", (name,)).fetchone()
         if existing:
             return jsonify(success=True, tag={"id": existing["id"], "name": name, "color": color})
-        cur = db.execute("INSERT INTO tags (name, color) VALUES (?, ?)", (name, color))
-        tag_id = cur.lastrowid
+        cur = db.execute("INSERT INTO tags (name, color) VALUES (%s, %s) RETURNING id", (name, color))
+        tag_id = cur.fetchone()["id"]
     return jsonify(success=True, tag={"id": tag_id, "name": name, "color": color})
 
 
@@ -1290,8 +1285,9 @@ def api_entity_tag_add(entity_type, entity_id):
         return jsonify(success=False, message="tag_id required"), 400
     with get_db() as db:
         db.execute("""
-            INSERT OR IGNORE INTO entity_tags (entity_type, entity_id, tag_id)
-            VALUES (?, ?, ?)
+            INSERT INTO entity_tags (entity_type, entity_id, tag_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING
         """, (entity_type, entity_id, int(tag_id)))
     return jsonify(success=True)
 
@@ -1303,7 +1299,7 @@ def api_entity_tag_remove(entity_type, entity_id, tag_id):
     with get_db() as db:
         db.execute("""
             DELETE FROM entity_tags
-            WHERE entity_type = ? AND entity_id = ? AND tag_id = ?
+            WHERE entity_type = %s AND entity_id = %s AND tag_id = %s
         """, (entity_type, entity_id, tag_id))
     return jsonify(success=True)
 
@@ -1313,21 +1309,26 @@ def api_entity_tag_remove(entity_type, entity_id, tag_id):
 @app.post("/experiment/<int:experiment_id>/duplicate")
 def experiment_duplicate(experiment_id):
     with get_db() as db:
-        exp = db.execute("SELECT * FROM experiments WHERE id = ?", (experiment_id,)).fetchone()
+        exp = db.execute("SELECT * FROM experiments WHERE id = %s", (experiment_id,)).fetchone()
         if not exp:
             abort(404)
         stamp = now_iso()
         new_title = "Copy of " + exp["title"]
         cur = db.execute("""
             INSERT INTO experiments (title, lab, content_json, parent_type, parent_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
         """, (new_title, exp["lab"], exp["content_json"], exp["parent_type"], exp["parent_id"], stamp))
-        new_id = cur.lastrowid
+        new_id = cur.fetchone()["id"]
 
         # Copy tags
-        tags = db.execute("SELECT tag_id FROM entity_tags WHERE entity_type = 'experiment' AND entity_id = ?", (experiment_id,)).fetchall()
+        tags = db.execute("SELECT tag_id FROM entity_tags WHERE entity_type = 'experiment' AND entity_id = %s", (experiment_id,)).fetchall()
         for t in tags:
-            db.execute("INSERT OR IGNORE INTO entity_tags (entity_type, entity_id, tag_id) VALUES ('experiment', ?, ?)", (new_id, t["tag_id"]))
+            db.execute("""
+                INSERT INTO entity_tags (entity_type, entity_id, tag_id)
+                VALUES ('experiment', %s, %s)
+                ON CONFLICT DO NOTHING
+            """, (new_id, t["tag_id"]))
 
     if exp["content_json"]:
         link_media("experiment", new_id, exp["content_json"])
@@ -1339,20 +1340,25 @@ def experiment_duplicate(experiment_id):
 @app.post("/concept/<int:concept_id>/duplicate")
 def concept_duplicate(concept_id):
     with get_db() as db:
-        concept = db.execute("SELECT * FROM concepts WHERE id = ?", (concept_id,)).fetchone()
+        concept = db.execute("SELECT * FROM concepts WHERE id = %s", (concept_id,)).fetchone()
         if not concept:
             abort(404)
         stamp = now_iso()
         new_title = "Copy of " + concept["title"]
         cur = db.execute("""
             INSERT INTO concepts (title, author, content_json, parent_type, parent_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
         """, (new_title, concept["author"], concept["content_json"], concept["parent_type"], concept["parent_id"], stamp, stamp))
-        new_id = cur.lastrowid
+        new_id = cur.fetchone()["id"]
 
-        tags = db.execute("SELECT tag_id FROM entity_tags WHERE entity_type = 'concept' AND entity_id = ?", (concept_id,)).fetchall()
+        tags = db.execute("SELECT tag_id FROM entity_tags WHERE entity_type = 'concept' AND entity_id = %s", (concept_id,)).fetchall()
         for t in tags:
-            db.execute("INSERT OR IGNORE INTO entity_tags (entity_type, entity_id, tag_id) VALUES ('concept', ?, ?)", (new_id, t["tag_id"]))
+            db.execute("""
+                INSERT INTO entity_tags (entity_type, entity_id, tag_id)
+                VALUES ('concept', %s, %s)
+                ON CONFLICT DO NOTHING
+            """, (new_id, t["tag_id"]))
 
     if concept["content_json"]:
         link_media("concept", new_id, concept["content_json"])
@@ -1371,15 +1377,15 @@ def compare():
         flash("Select two experiments to compare.", "error")
         return redirect(url_for("index"))
     with get_db() as db:
-        left = db.execute("SELECT * FROM experiments WHERE id = ?", (left_id,)).fetchone()
-        right = db.execute("SELECT * FROM experiments WHERE id = ?", (right_id,)).fetchone()
+        left = db.execute("SELECT * FROM experiments WHERE id = %s", (left_id,)).fetchone()
+        right = db.execute("SELECT * FROM experiments WHERE id = %s", (right_id,)).fetchone()
         if not left or not right:
             flash("One or both experiments not found.", "error")
             return redirect(url_for("index"))
         left_content = parse_content_json(left["content_json"])
         right_content = parse_content_json(right["content_json"])
-        left_ai = db.execute("SELECT * FROM experiment_ai_prompts WHERE experiment_id = ?", (left_id,)).fetchone()
-        right_ai = db.execute("SELECT * FROM experiment_ai_prompts WHERE experiment_id = ?", (right_id,)).fetchone()
+        left_ai = db.execute("SELECT * FROM experiment_ai_prompts WHERE experiment_id = %s", (left_id,)).fetchone()
+        right_ai = db.execute("SELECT * FROM experiment_ai_prompts WHERE experiment_id = %s", (right_id,)).fetchone()
 
     breadcrumbs = make_breadcrumbs(("Home", url_for("index")), ("Compare", None))
     return render_template(
@@ -1406,7 +1412,7 @@ def compare_ai_save():
             if eid:
                 db.execute("""
                     INSERT INTO experiment_ai_prompts (experiment_id, text, updated_at)
-                    VALUES (?, ?, ?)
+                    VALUES (%s, %s, %s)
                     ON CONFLICT(experiment_id) DO UPDATE SET
                       text=excluded.text,
                       updated_at=excluded.updated_at

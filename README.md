@@ -9,12 +9,29 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Opens at **http://127.0.0.1:5001**. No build step, no external database — everything runs from a single SQLite file (`eln.db`) created automatically on first launch.
+Opens at **http://127.0.0.1:5001**.
+
+### Prerequisites
+
+- **PostgreSQL 16+** with the `citext` extension
+- **Python 3.10+**
+
+```bash
+# First-time setup: create database and user (once per machine)
+sudo -u postgres psql -c "CREATE USER <user> WITH PASSWORD '<password>';"
+sudo -u postgres psql -c "CREATE DATABASE eln_db OWNER <user>;"
+sudo -u postgres psql -d eln_db -c "CREATE EXTENSION IF NOT EXISTS citext;"
+
+# Configure connection
+cp .env.example .env   # then edit DATABASE_URL with your credentials
+```
+
+All tables are created automatically on first launch — no manual schema setup needed.
 
 ## Stack
 
 - **Backend:** Python / Flask (single-file `app.py`)
-- **Database:** SQLite with raw SQL (no ORM)
+- **Database:** PostgreSQL with raw SQL via psycopg3 (no ORM), connection pooling via psycopg_pool
 - **Frontend:** Jinja2 templates, vanilla JS, single CSS file
 - **Editor:** [Editor.js](https://editorjs.io/) (WYSIWYG block editor loaded via CDN)
 
@@ -72,7 +89,8 @@ Three built-in templates to quick-start new pages:
 ```
 ai_lab_manager/
   app.py                  # Flask application (all routes, DB schema, helpers)
-  requirements.txt        # Flask + Werkzeug
+  .env                    # DATABASE_URL + FLASK_SECRET_KEY (gitignored)
+  requirements.txt        # Flask, Werkzeug, psycopg3, psycopg_pool, python-dotenv
   CLAUDE.md               # Project conventions for AI assistants
   static/
     styles.css            # All styles (single file)
@@ -94,7 +112,6 @@ ai_lab_manager/
     _render_blocks.html   # Server-side rendering of Editor.js JSON blocks
     _tags_inline.html     # Inline tag management partial
   uploads/                # File uploads (gitignored)
-  eln.db                  # SQLite database (gitignored, auto-created)
 ```
 
 ## Data Model
@@ -117,4 +134,4 @@ activity_log (id, entity_type, entity_id, entity_title, action, created_at)
 media (id, stored_name, original_name, entity_type, entity_id, ...)
 ```
 
-All tables are created automatically on first request. Schema migrations run idempotently via `ALTER TABLE ADD COLUMN` with `PRAGMA table_info` checks. Foreign keys use `ON DELETE CASCADE`.
+All tables are created automatically at startup via `CREATE TABLE IF NOT EXISTS`. Foreign keys use `ON DELETE CASCADE`. Tags use `CITEXT` for case-insensitive uniqueness.
